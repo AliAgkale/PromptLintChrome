@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>PromptLint</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{width:300px;background:#0f1117;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px}
+    .header{display:flex;align-items:center;gap:8px;padding:12px 14px 10px;border-bottom:1px solid #1e2535;background:#161b22}
+    .logo{color:#4f8ef7;font-size:16px}.title{font-weight:600;font-size:14px}.version{font-size:10px;color:#4a5568;margin-left:auto;font-family:monospace}
+    .body{padding:14px}
+    .status-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #1e2535;margin-bottom:12px}
+    .status-label{font-size:12px;color:#8892a4}
+    .toggle{position:relative;width:36px;height:20px}
+    .toggle input{opacity:0;width:0;height:0}
+    .slider{position:absolute;inset:0;background:#2e3a4e;border-radius:20px;cursor:pointer;transition:background .2s}
+    .slider::before{content:'';position:absolute;width:14px;height:14px;left:3px;top:3px;background:#8892a4;border-radius:50%;transition:transform .2s,background .2s}
+    input:checked+.slider{background:#4f8ef7}
+    input:checked+.slider::before{transform:translateX(16px);background:#fff}
+    .score-card{display:flex;align-items:center;gap:12px;padding:12px;background:#161b22;border:1px solid #1e2535;border-radius:8px;margin-bottom:10px}
+    .score-dot{width:20px;height:20px;border-radius:50%;flex-shrink:0}
+    .score-num{font-size:32px;font-weight:700;font-family:monospace;line-height:1}
+    .score-info{flex:1}
+    .score-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+    .score-bar{height:4px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden;margin-bottom:6px}
+    .score-bar-fill{height:100%;border-radius:2px;transition:width .4s}
+    /* 3-color scheme: excellent+good=green, fair=yellow, poor=red — showing
+       4 finely-graded colors implied a false precision (why is 82 "excellent"
+       blue and 78 "good" a different color?) that's hard to justify to a user
+       and erodes trust more than it helps. */
+    .excellent .score-num,.excellent .score-label{color:#4ade80} .excellent .score-bar-fill,.excellent .score-dot{background:#4ade80}
+    .good      .score-num,.good      .score-label{color:#4ade80} .good      .score-bar-fill,.good      .score-dot{background:#4ade80}
+    .fair      .score-num,.fair      .score-label{color:#fbbf24} .fair      .score-bar-fill,.fair      .score-dot{background:#fbbf24}
+    .poor      .score-num,.poor      .score-label{color:#f87171} .poor      .score-bar-fill,.poor      .score-dot{background:#f87171}
+    .score-tokens{font-size:10px;color:#4a5568;font-family:monospace}
+    .intent-pill{display:inline-block;font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;background:rgba(79,142,247,.12);color:#4f8ef7;border:1px solid rgba(79,142,247,.25);margin-top:4px}
+    .idle-msg{font-size:11px;color:#4a5568;text-align:center;padding:14px 0}
+    .sites{display:flex;flex-wrap:wrap;gap:4px;margin-top:10px}
+    .site-chip{font-size:10px;padding:2px 7px;background:#161b22;border:1px solid #1e2535;border-radius:20px;color:#8892a4}
+    .footer{padding:8px 14px;border-top:1px solid #1e2535;font-size:10px;color:#4a5568;display:flex;justify-content:space-between;align-items:center}
+    .footer a{color:#4f8ef7;text-decoration:none}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <span class="logo">⚡</span>
+    <span class="title">PromptLint</span>
+    <span class="version" id="version-label">v…</span>
+  </div>
+  <div class="body">
+    <div class="status-row">
+      <span class="status-label" id="status-text">Enabled</span>
+      <label class="toggle">
+        <input type="checkbox" id="enabled-toggle" checked />
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="status-row" style="border-bottom:none;margin-bottom:8px">
+      <span class="status-label">Modalità debug (mostra il punteggio numerico)</span>
+      <label class="toggle">
+        <input type="checkbox" id="debug-toggle" />
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div id="idle-msg" class="idle-msg">Open ChatGPT, Claude, Gemini and start typing.</div>
+    <div id="score-card" class="score-card" style="display:none">
+      <div class="score-dot" id="score-dot" style="display:none"></div>
+      <div class="score-num" id="score-num">—</div>
+      <div class="score-info">
+        <div class="score-label" id="score-label">—</div>
+        <div class="score-bar" id="score-bar"><div class="score-bar-fill" id="score-bar-fill" style="width:0%"></div></div>
+        <div class="score-tokens" id="score-tokens"></div>
+        <div id="intent-pill" class="intent-pill" style="display:none"></div>
+      </div>
+    </div>
+    <div style="font-size:10px;color:#4a5568;text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin-bottom:6px">Active on</div>
+    <div class="sites">
+      <span class="site-chip">ChatGPT</span><span class="site-chip">Claude</span>
+      <span class="site-chip">Gemini</span><span class="site-chip">Perplexity</span>
+      <span class="site-chip">Copilot</span><span class="site-chip">Poe</span>
+    </div>
+  </div>
+  <div class="footer">
+    <span>No AI · No network · Offline</span>
+    <a href="https://github.com/your-username/promptlint" target="_blank">GitHub ↗</a>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
