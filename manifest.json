@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "PromptLint",
   "version": "1.0.0",
-  "description": "Real-time prompt analysis in ChatGPT, Claude, Gemini and more. No AI, no network, offline.",
+  "description": "Analisi dei prompt in tempo reale, offline. Segnala cosa non funziona e come correggerlo: richieste senza oggetto, vincoli impossibili, cortesia che costa token. Nessuna AI, nessuna rete.",
   "homepage_url": "https://github.com/your-username/promptlint",
   "icons": {
     "16": "icons/icon16.png",
