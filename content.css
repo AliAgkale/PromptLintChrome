@@ -1,4 +1,4 @@
-/* PromptLint Chrome Extension v2.15.0 — Content Styles */
+/* PromptLint Chrome Extension v1.0.0 — Content Styles */
 
 :root {
   --pl-red:    #f87171;
@@ -274,6 +274,9 @@
 .pl-obs-example .after  { color:var(--pl-green); }
 .pl-obs-impact { font-size:10px; color:var(--pl-green); font-family:var(--pl-mono); }
 .pl-clean { text-align:center; padding:20px 0; font-size:12px; color:var(--pl-green); }
+/* Detta quando il punteggio è basso ma nessuna regola sa dire perché: non
+   rivendica pulizia, che sarebbe falsa sotto un pallino non verde. */
+.pl-unnamed { padding:14px 12px; font-size:12px; line-height:1.5; color:var(--pl-text-dim, #8892a4); border-top:1px solid var(--pl-border, #2a3142); }
 
 /* ─── Misc ───────────────────────────────────────────────────────────────── */
 .pl-section-title {
