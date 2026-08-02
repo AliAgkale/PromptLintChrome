@@ -1,144 +1,240 @@
-# PromptLint — estensione Chrome
+# PromptLint — Chrome Extension
 
-Analizza il prompt mentre lo scrivi, dentro la pagina di ChatGPT, Claude, Gemini e altri.
-Offline, senza rete, senza modelli: solo regole deterministiche. Mostra un indicatore accanto al
-campo di input e, aprendo il pannello, cosa non funziona e come sistemarlo.
+PromptLint analyses your prompt as you type, directly inside ChatGPT, Claude, Gemini and other supported AI platforms.
 
-Motore: `promptlint-core` 3.0.0. Estensione: 1.0.0.
+It runs entirely offline using deterministic rules—no network requests, no AI models, no cloud services.
+
+A small indicator appears next to the input box, and opening the panel explains what is wrong with the prompt, why it matters, and how to improve it.
 
 ---
 
-## `content.js` è un artefatto: non si modifica a mano
+# `content.js` is a generated artifact
 
-Si ricostruisce con `node build.mjs`. Il motivo non è di stile — il file contiene due cose con
-due sorgenti diversi:
+`content.js` should **never** be edited manually.
 
-| parte | dimensione | sorgente |
-|---|---|---|
-| motore di analisi | ~1,14 MB | `promptlint-core-v3/src/index.chrome.ts` |
-| pannello (interfaccia) | ~40 KB | **`src-ui/panel.js`, in questa cartella** |
-
-Le due parti vivono dentro una IIFE unica, così il pannello vede le funzioni del motore senza
-passare da `import`.
-
-Per un periodo il pannello è esistito **soltanto** dentro il bundle compilato, senza sorgente in
-nessun archivio: ricostruire `content.js` dal core con un normale `tsup` avrebbe cancellato
-novecento righe di interfaccia in modo non recuperabile. Ora sono in `src-ui/panel.js` e
-`build.mjs` le rimette al loro posto. Se qualcuno ti dice di "ricompilare il core e copiare il
-`dist`", quella è la procedura che distrugge il pannello.
-
-## Build
+Always rebuild it with:
 
 ```bash
-node build.mjs                 # core accanto a questa cartella
-node build.mjs /percorso/core  # core altrove
-node --check content.js        # sintassi
+node build.mjs
 ```
 
-Lo script non scrive il file se un controllo fallisce. Vale la pena sapere perché ciascuno
-esiste:
+This is not simply a style preference.
 
-- **il motore è presente**, **il pannello è presente** — un errore di splice perde una metà in
-  silenzio
-- **il dizionario grande resta esterno** — `dictionary.it.big.txt` (3,7 MB) è caricato a
-  richiesta via `web_accessible_resources`, non inlinato
-- **la IIFE è chiusa**
-- **nessuna dipendenza esterna rimasta**, **nspell è inlinato** — questi due nascono da un
-  errore reale. Invocando `tsup` con argomenti da riga di comando invece del `tsup.config.ts`
-  del core, il campo `noExternal: [/.*/]` non viene applicato: il bundle compila, passa
-  `node --check`, è 33 KB più piccolo, e contiene ancora `import nspell from "nspell"`. Un
-  import nudo dentro un content script non si risolve, quindi **l'estensione non parte affatto**
-  e nulla lo segnala. Per questo `build.mjs` invoca `npx tsup` senza argomenti.
+The bundle combines two independent codebases:
 
-**Riproducibilità.** A parità di `node_modules` il motore compilato è byte per byte identico fra
-build successive. Il core ha un `package-lock.json`: usa `npm ci`. Con `npm install` la
-risoluzione delle dipendenze può cambiare, e con essa il bundle.
+| Component | Source |
+|-----------|--------|
+| Analysis engine | `promptlint-core/src/index.chrome.ts` |
+| User interface | `src-ui/panel.js` |
+
+Both are merged into a single IIFE so the UI can directly access the analysis engine without imports.
+
+Originally the panel only existed inside the compiled bundle. Rebuilding `content.js` directly from the core would permanently overwrite hundreds of lines of UI code. The panel source now lives in `src-ui/panel.js`, and `build.mjs` merges everything correctly.
+
+If someone suggests "just rebuild the core and copy the generated bundle", **do not do it**—that procedure removes the entire UI.
 
 ---
 
-## Installazione in sviluppo
+# Building
 
-1. `chrome://extensions`
-2. attiva **Modalità sviluppatore**
-3. **Carica estensione non pacchettizzata**, scegli questa cartella
-4. apri una pagina supportata e comincia a scrivere
+```bash
+node build.mjs                 # core located next to this repository
+node build.mjs /path/to/core   # core located elsewhere
 
-Siti in `manifest.json`: ChatGPT, chat.openai.com, Claude, Gemini, AI Studio, Copilot, Bing,
-Poe, Perplexity, M365. Permessi: `storage`, `activeTab`. Nessuna richiesta di rete, in nessun
-momento.
-
-`homepage_url` nel manifest è ancora il segnaposto `github.com/your-username/promptlint`.
-
----
-
-## File
-
-| file | cosa è |
-|---|---|
-| `manifest.json` | manifest v3 |
-| `content.js` | **artefatto** — motore + pannello, prodotto da `build.mjs` |
-| `src-ui/panel.js` | sorgente del pannello: DOM, stato, aggancio all'input |
-| `content.css` | stili del pannello e dell'indicatore |
-| `popup.html`, `popup.js` | popup della barra: interruttore on/off e interruttore debug |
-| `background.js` | service worker: imposta `enabled` all'installazione e aggiorna il badge |
-| `dictionary.it.big.txt` | dizionario italiano, 3,7 MB, caricato a richiesta |
-| `build.mjs` | ricostruisce `content.js` |
-
----
-
-## Come funziona
-
-Un `MutationObserver` aggancia il campo di input della pagina. A ogni battitura il testo passa
-ad `analyze()`, che gira interamente in locale e restituisce un punteggio 0-100, una banda e una
-lista di osservazioni. Lo stato on/off e il debug stanno in `chrome.storage.sync`.
-
-### Dove il numero si vede e dove no
-
-Questo punto è importante e attualmente **incoerente**.
-
-| superficie | mostra il numero? | soglie |
-|---|---|---|
-| pannello e indicatore, `debugMode` off (default) | no: pallino colorato + etichetta | 66 / 45 |
-| pannello, `debugMode` on (interruttore nel popup) | sì: numero, barra, valori per dimensione | 66 / 45 |
-| **badge sull'icona dell'estensione** | **sì, sempre** | **80 / 60 / 40** |
-
-Il pannello nasconde il numero per scelta: con la precisione attuale della banda buona (73% sul
-gold set) due cifre comunicherebbero una precisione che il motore non ha, mentre tre bande sono
-oneste. Ma `background.js` scrive il punteggio grezzo sul badge senza guardare `debugMode`, e con
-soglie sue: un prompt da 62 ha il **badge arancione e il pallino verde**.
-
-Va deciso, non lasciato così. Le opzioni:
-
-```js
-// background.js — allineare il badge al pannello (una riga)
-chrome.action.setBadgeText({ tabId, text: '' });   // il badge tace
-// oppure rispettare debugMode, oppure usare 66/45 al posto di 80/60/40
+node --check content.js        # syntax validation
 ```
 
-Non l'ho cambiato perché è una decisione di prodotto, non un bug di implementazione.
+The build script refuses to overwrite `content.js` if any validation fails.
 
-### Lo scaffold è spento
+Each validation exists because it previously prevented a real production issue:
 
-`SHOW_SCAFFOLD = false` in `src-ui/panel.js`. Il motore lo calcola e `result.scaffold` è
-popolato, ma non viene disegnato: i vocabolari degli slot non sono stati validati. Riaccenderlo
-richiede il lavoro descritto come Priorità 4 nel core.
+- both the analysis engine and UI are present
+- the large Italian dictionary remains external (`dictionary.it.big.txt`) and is loaded on demand through `web_accessible_resources`
+- the generated IIFE is properly closed
+- no external dependencies remain inside the bundle
+
+The last check is particularly important.
+
+If `tsup` is executed from the command line instead of using the core's `tsup.config.ts`, the `noExternal: [/.*/]` configuration is ignored.
+
+The bundle still compiles successfully and passes `node --check`, but it silently contains:
+
+```javascript
+import nspell from "nspell";
+```
+
+Content scripts cannot resolve bare imports, so the extension simply fails to start without any obvious error.
+
+For this reason `build.mjs` always invokes `npx tsup` without command-line overrides.
 
 ---
 
-## Stato noto
+## Reproducible builds
 
-- **La versione non è stata aggiornata** nonostante il lavoro sul motore. Quando rilasciare non
-  è una decisione dello sviluppo.
-- **`conversationTurn`.** Il motore valuta un follow-up in modo molto diverso da una prima
-  battuta — fino a 65 punti sullo stesso testo. Verificare che il pannello passi sempre
-  `conversationTurn: 'followup'` quando la conversazione ha già dei messaggi è la cosa a più alto
-  rendimento e più basso costo che resti da fare, e finché non è verificata tutte le metriche del
-  core sono ottimistiche.
-- **Volume dei suggerimenti.** Su un prompt valutato buono possono comparire cinque osservazioni.
-  Il pannello le mostra tutte; due basterebbero.
-- **La riga di riepilogo.** `Buon prompt, migliorabile. Focus: precisione.` compare su quasi
-  ogni prompt e non porta informazione.
-- **Il badge**, sopra.
+Given identical `node_modules`, the generated analysis engine is byte-for-byte reproducible.
 
-Metriche del motore, criterio di valutazione e cronologia: `CHANGELOG.md`, `README.md` e
-`gold/CRITERIO.md` nel core.
+The core repository includes a `package-lock.json`.
+
+Use:
+
+```bash
+npm ci
+```
+
+instead of:
+
+```bash
+npm install
+```
+
+to ensure dependency resolution—and therefore the generated bundle—remains identical.
+
+---
+
+# Development installation
+
+1. Open `chrome://extensions`
+2. Enable **Developer mode**
+3. Click **Load unpacked**
+4. Select this project folder
+5. Open any supported website and start typing
+
+Supported websites include:
+
+- ChatGPT
+- Claude
+- Gemini
+- Google AI Studio
+- Microsoft Copilot
+- Bing
+- Poe
+- Perplexity
+- Microsoft 365
+
+Permissions:
+
+- `storage`
+- `activeTab`
+
+The extension never performs network requests.
+
+> **Note:** `homepage_url` in `manifest.json` is still a placeholder.
+
+---
+
+# Project structure
+
+| File | Purpose |
+|------|---------|
+| `manifest.json` | Manifest V3 configuration |
+| `content.js` | Generated artifact combining engine and UI |
+| `src-ui/panel.js` | Panel source code, DOM integration and state management |
+| `content.css` | Panel and indicator styles |
+| `popup.html`, `popup.js` | Extension popup (enable/disable, debug mode) |
+| `background.js` | Service worker, default settings and badge updates |
+| `dictionary.it.big.txt` | Large Italian dictionary loaded on demand |
+| `build.mjs` | Rebuilds `content.js` |
+
+---
+
+# How it works
+
+A `MutationObserver` attaches to the page's input field.
+
+On every keystroke, the prompt is analysed locally by `analyze()`.
+
+The engine returns:
+
+- a score (0–100)
+- a quality band
+- a list of observations explaining detected issues
+
+Extension settings such as enabled/disabled state and debug mode are stored in `chrome.storage.sync`.
+
+---
+
+# Where the score is shown
+
+The current behaviour is intentionally inconsistent and represents an open product decision.
+
+| Surface | Numeric score | Thresholds |
+|----------|---------------|------------|
+| Panel and indicator (default) | No | 66 / 45 |
+| Panel (Debug Mode enabled) | Yes | 66 / 45 |
+| Extension badge | Always | 80 / 60 / 40 |
+
+The panel intentionally hides the numeric score.
+
+With the current accuracy, the quality band communicates confidence more honestly than an exact number.
+
+However, `background.js` always displays the raw score in the toolbar badge using different thresholds.
+
+This can produce inconsistent feedback—for example, a prompt may appear **green** inside the panel while the extension badge remains **orange**.
+
+Possible solutions include:
+
+```javascript
+chrome.action.setBadgeText({ tabId, text: '' });
+```
+
+or making the badge follow Debug Mode, or simply using the same thresholds as the panel.
+
+This has intentionally been left as a product decision rather than an implementation bug.
+
+---
+
+# Scaffold UI
+
+The scaffold interface is currently disabled.
+
+```javascript
+SHOW_SCAFFOLD = false
+```
+
+The analysis engine still computes `result.scaffold`, but the UI does not display it because the slot vocabularies have not yet been fully validated.
+
+---
+
+# Known issues
+
+### Conversation context
+
+The analysis engine evaluates follow-up prompts very differently from opening prompts.
+
+Ensuring the extension correctly passes:
+
+```javascript
+conversationTurn: "followup"
+```
+
+whenever a conversation already exists is likely the highest-impact improvement still remaining.
+
+Until this is fully verified, engine benchmark metrics should be considered slightly optimistic.
+
+### Too many observations
+
+Good prompts may still produce five or more suggestions.
+
+Showing only the most relevant two would improve readability.
+
+### Summary line
+
+The message:
+
+> Good prompt, but could be improved. Focus: precision.
+
+appears for most prompts while adding little useful information.
+
+### Extension badge
+
+The badge behaviour described above still needs a final product decision.
+
+---
+
+# Additional documentation
+
+Further information about the analysis engine, benchmarking methodology and evaluation criteria can be found in the core repository:
+
+- `README.md`
+- `CHANGELOG.md`
+- `gold/CRITERIO.md`
